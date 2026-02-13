@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    const socket = io('http://localhost:5000', { auth: { token } });
+    const socket = io(window.location.origin, { auth: { token } });
     socket.on('user:event', (evt) => {
       if (evt?.type === 'FORCE_LOGOUT') {
         setLogoutSignal({
@@ -82,7 +82,7 @@ export function AuthProvider({ children }) {
   function logout() {
     const t = token || sessionStorage.getItem('token') || localStorage.getItem('token');
     if (t) {
-      fetch('http://localhost:5000/api/logout', {
+      fetch('/api/logout', {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}` }
       }).catch(() => {});

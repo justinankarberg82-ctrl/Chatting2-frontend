@@ -10,7 +10,7 @@ export default function Chat() {
     if (!input.trim()) return;
     setLoading(true);
 
-    const res = await fetch('http://localhost:5000/api/chat/stream', {
+    const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

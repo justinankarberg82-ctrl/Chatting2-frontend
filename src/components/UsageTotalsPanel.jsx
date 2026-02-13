@@ -136,7 +136,7 @@ export default function UsageTotalsPanel({ token, refreshKey }) {
 
     setLoading(true);
     setError(null);
-    fetch(`http://localhost:5000/api/admin/usage-summary?${qs.toString()}`, {
+    fetch(`/api/admin/usage-summary?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })

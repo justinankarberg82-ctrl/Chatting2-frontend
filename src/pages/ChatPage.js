@@ -54,7 +54,7 @@ export default function ChatPage() {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    fetch("http://localhost:5000/api/chats", { headers: authHeader })
+    fetch("/api/chats", { headers: authHeader })
       .then(async (res) => {
         if (res.status === 401 || res.status === 403) throw new Error('unauthorized');
         return res.json();
@@ -128,7 +128,7 @@ export default function ChatPage() {
     setActiveChatId(id);
     setChatId(id);
 
-    const res = await fetch(`http://localhost:5000/api/chat/${id}`, {
+    const res = await fetch(`/api/chat/${id}`, {
       headers: authHeader,
     });
     if (res.status === 401 || res.status === 403) {
@@ -221,7 +221,7 @@ export default function ChatPage() {
 
     let res;
     try {
-      res = await fetch("http://localhost:5000/api/chat/stream", {
+      res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -304,7 +304,7 @@ export default function ChatPage() {
               return updated;
             });
             // refresh chat list so new chat appears in history
-            fetch("http://localhost:5000/api/chats", {
+            fetch("/api/chats", {
               headers: authHeader,
             })
               .then((res) => res.json())
@@ -337,7 +337,7 @@ export default function ChatPage() {
   }
 
   async function deleteChat(id) {
-    await fetch(`http://localhost:5000/api/chat/${id}`, {
+    await fetch(`/api/chat/${id}`, {
       method: "DELETE",
       headers: authHeader,
     });
@@ -363,7 +363,7 @@ export default function ChatPage() {
     const title = prompt("New title", chat.title);
     if (!title) return;
 
-    await fetch(`http://localhost:5000/api/chat/${chat._id}/title`, {
+    await fetch(`/api/chat/${chat._id}/title`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -774,7 +774,7 @@ export default function ChatPage() {
                             });
 
                             const res = await fetch(
-                              "http://localhost:5000/api/chat/stream",
+                              "/api/chat/stream",
                               {
                                 method: "POST",
                                 headers: {
@@ -909,7 +909,7 @@ export default function ChatPage() {
                             if (idToLoad) loadChat(idToLoad);
 
                             // Refresh chat list so title/order update after edit.
-                            fetch("http://localhost:5000/api/chats", { headers: authHeader })
+                            fetch("/api/chats", { headers: authHeader })
                               .then((r) => (r.ok ? r.json() : []))
                               .then(setChats)
                               .catch(() => {});

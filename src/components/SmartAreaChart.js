@@ -234,7 +234,7 @@ export default function SmartAreaChart({
     });
     if (userId) qs.set("userId", userId);
 
-    fetch(`http://localhost:5000/api/admin/charts/tokens-hourly?${qs.toString()}`, {
+    fetch(`/api/admin/charts/tokens-hourly?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })

@@ -205,7 +205,7 @@ export default function AllUsersLiveChart({ token, usageEvent, refreshKey }) {
       end: toDateKey(dayEndDate),
     });
 
-    fetch(`http://localhost:5000/api/admin/charts/tokens-daily?${qs.toString()}`, {
+    fetch(`/api/admin/charts/tokens-daily?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })

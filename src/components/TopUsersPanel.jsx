@@ -172,7 +172,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
 
     setLoading(true);
     setError(null);
-    fetch(`http://localhost:5000/api/admin/top-users?${qs.toString()}`, {
+    fetch(`/api/admin/top-users?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
@@ -212,7 +212,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
       limit: String(TOP_N),
     });
 
-    fetch(`http://localhost:5000/api/admin/top-users?${qs.toString()}`, {
+    fetch(`/api/admin/top-users?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })

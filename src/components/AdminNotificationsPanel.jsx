@@ -113,7 +113,7 @@ export default function AdminNotificationsPanel({ event, token }) {
 
     // On initial admin login the socket event can be missed; show the latest server-side event.
     const ctrl = new AbortController();
-    fetch('http://localhost:5000/api/admin/events?limit=50', {
+    fetch('/api/admin/events?limit=50', {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
@@ -144,7 +144,7 @@ export default function AdminNotificationsPanel({ event, token }) {
     if (!token) return;
 
     const ctrl = new AbortController();
-    fetch("http://localhost:5000/api/admin/events?limit=200", {
+    fetch("/api/admin/events?limit=200", {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
