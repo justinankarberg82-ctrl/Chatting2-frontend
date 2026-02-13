@@ -323,11 +323,15 @@ export default function ChatPage() {
               return updated;
             });
           } else {
+            const errMsg =
+              payload && typeof payload === "object"
+                ? String(payload.detail || payload.error || "Failed.")
+                : "Failed.";
             setIsTyping(false);
             setMessages((m) => {
               const updated = [...m];
               const idx = updated.findIndex((x) => x.role === "assistant" && x.tempId === tempId);
-              if (idx >= 0) updated[idx] = { ...updated[idx], loading: false, content: "Failed." };
+              if (idx >= 0) updated[idx] = { ...updated[idx], loading: false, content: errMsg };
               return updated;
             });
           }
@@ -779,7 +783,7 @@ export default function ChatPage() {
                                 method: "POST",
                                 headers: {
                                   "Content-Type": "application/json",
-                                  Authorization: `Bearer ${localStorage.getItem("token")}`,
+                                  ...authHeader,
                                 },
                                 body: JSON.stringify({
                                   chatId,
@@ -858,6 +862,28 @@ export default function ChatPage() {
                                   }
 
                                   if (pendingEvent === "error") {
+                                    const errMsg =
+                                      payload && typeof payload === "object"
+                                        ? String(payload.detail || payload.error || "Failed.")
+                                        : "Failed.";
+                                    setMessages((prev) => {
+                                      const updated = [...prev];
+                                      for (let i = updated.length - 1; i >= 0; i--) {
+                                        if (
+                                          updated[i].role === "assistant" &&
+                                          updated[i].messageId === m.messageId
+                                        ) {
+                                          updated[i] = {
+                                            ...updated[i],
+                                            content: errMsg,
+                                            loading: false,
+                                          };
+                                          break;
+                                        }
+                                      }
+                                      return updated;
+                                    });
+                                    setIsTyping(false);
                                     pendingEvent = null;
                                     continue;
                                   }
