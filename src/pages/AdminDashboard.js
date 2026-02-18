@@ -6,6 +6,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import LeftAdmin from "../components/LeftAdmin";
 import AllUsersLiveSection from "../components/AllUsersLiveSection";
 import AuditTrailModal from "../components/AuditTrailModal";
+import { API_BASE, SOCKET_ORIGIN } from "../lib/net";
 // legacy user panel components removed; using LeftAdmin instead
 
 export default function AdminDashboard() {
@@ -114,7 +115,7 @@ export default function AdminDashboard() {
 
     try {
       const res = await fetch(
-        `/api/admin/users/${nextUser._id}`,
+        `${API_BASE}/admin/users/${nextUser._id}`,
         {
           method: "PATCH",
           headers: {
@@ -223,7 +224,7 @@ export default function AdminDashboard() {
     try {
       await Promise.all(
         ids.map((id) =>
-          fetch(`/api/admin/users/${id}`, {
+          fetch(`${API_BASE}/admin/users/${id}`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
@@ -244,7 +245,7 @@ export default function AdminDashboard() {
 
   async function loadUsers() {
     setLoading(true);
-    const res = await fetch("/api/admin/users", {
+    const res = await fetch(`${API_BASE}/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
@@ -271,7 +272,7 @@ export default function AdminDashboard() {
 
     try {
       const res = await fetch(
-        `/api/admin/charts/tokens-daily?${qs.toString()}`,
+        `${API_BASE}/admin/charts/tokens-daily?${qs.toString()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -291,7 +292,7 @@ export default function AdminDashboard() {
 
     try {
       const res = await fetch(
-        `/api/admin/users/${user._id}/analytics`,
+        `${API_BASE}/admin/users/${user._id}/analytics`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
@@ -305,7 +306,7 @@ export default function AdminDashboard() {
 
     try {
       const activityRes = await fetch(
-        `/api/admin/users/${user._id}/activity?limit=120`,
+        `${API_BASE}/admin/users/${user._id}/activity?limit=120`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
       if (activityRes.ok) setAuditEvents(await activityRes.json());
@@ -362,7 +363,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!token) return;
 
-    const socket = io(window.location.origin, {
+    const socket = io(SOCKET_ORIGIN || undefined, {
       auth: { token },
     });
 
@@ -421,13 +422,13 @@ export default function AdminDashboard() {
             await loadTokensDaily(u._id);
 
             const res = await fetch(
-              `/api/admin/users/${u._id}/analytics`,
+              `${API_BASE}/admin/users/${u._id}/analytics`,
               { headers: { Authorization: `Bearer ${token}` } },
             );
             if (res.ok) setUserAnalytics(await res.json());
 
             const activityRes = await fetch(
-              `/api/admin/users/${u._id}/activity?limit=120`,
+              `${API_BASE}/admin/users/${u._id}/activity?limit=120`,
               { headers: { Authorization: `Bearer ${token}` } },
             );
             if (activityRes.ok) setAuditEvents(await activityRes.json());
@@ -493,7 +494,7 @@ export default function AdminDashboard() {
 
   async function createUser() {
     if (!username.trim()) return;
-    await fetch("/api/admin/users", {
+    await fetch(`${API_BASE}/admin/users`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -506,7 +507,7 @@ export default function AdminDashboard() {
   }
 
   async function toggleUser(id, isActive) {
-    await fetch(`/api/admin/users/${id}`, {
+    await fetch(`${API_BASE}/admin/users/${id}`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -620,7 +621,7 @@ export default function AdminDashboard() {
                 if (!username.trim()) return;
 
               // 1) Create user
-              const res = await fetch("/api/admin/users", {
+              const res = await fetch(`${API_BASE}/admin/users`, {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
@@ -1400,7 +1401,7 @@ export default function AdminDashboard() {
 
             <button
               onClick={async () => {
-                await fetch("/api/admin/users", {
+                await fetch(`${API_BASE}/admin/users`, {
                   method: "POST",
                   headers: {
                     "Content-Type": "application/json",
@@ -1508,7 +1509,7 @@ export default function AdminDashboard() {
                   // Let the UI animate, then delete
                   setTimeout(async () => {
                     try {
-                      await fetch(`/api/admin/users/${id}`, {
+                      await fetch(`${API_BASE}/admin/users/${id}`, {
                         method: "DELETE",
                         headers: { Authorization: `Bearer ${token}` },
                       });
@@ -1640,7 +1641,7 @@ export default function AdminDashboard() {
                       const results = await Promise.all(
                         eligibleIds.map(async (id) => {
                           const res = await fetch(
-                            `/api/admin/users/${id}`,
+                            `${API_BASE}/admin/users/${id}`,
                             {
                               method: "DELETE",
                               headers: { Authorization: `Bearer ${token}` },

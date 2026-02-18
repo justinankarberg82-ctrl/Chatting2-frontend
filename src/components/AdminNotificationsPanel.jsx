@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AuditTrailModal from "./AuditTrailModal";
+import { API_BASE } from "../lib/net";
 
 function ListIcon({ size = 16, color = "currentColor" }) {
   return (
@@ -17,6 +18,7 @@ function ListIcon({ size = 16, color = "currentColor" }) {
 function getEventView(evt) {
   const type = String(evt?.type || "").toUpperCase();
   const username = evt?.username ? String(evt.username) : null;
+  const ip = evt?.ip ? String(evt.ip) : "";
   const at = evt?.at ? new Date(evt.at) : new Date();
 
   const base = {
@@ -27,17 +29,19 @@ function getEventView(evt) {
     time: at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
   };
 
+  const withIp = (msg) => (ip ? `${msg} (ip: ${ip})` : msg);
+
   if (type === "LOGIN") {
-    return { ...base, title: "Login", message: `${username || "User"} logged in`, accent: "#22c55e" };
+    return { ...base, title: "Login", message: withIp(`${username || "User"} logged in`), accent: "#22c55e" };
   }
   if (type === "LOGOUT") {
-    return { ...base, title: "Logout", message: `${username || "User"} logged out`, accent: "#94a3b8" };
+    return { ...base, title: "Logout", message: withIp(`${username || "User"} logged out`), accent: "#94a3b8" };
   }
   if (type === "CHAT_CREATED") {
     return {
       ...base,
       title: "Chat",
-      message: `${username || "User"} created a new chat${evt?.title ? `: "${evt.title}"` : ""}`,
+      message: withIp(`${username || "User"} created a new chat${evt?.title ? `: "${evt.title}"` : ""}`),
       accent: "#3b82f6",
     };
   }
@@ -45,7 +49,7 @@ function getEventView(evt) {
     return {
       ...base,
       title: "Chat",
-      message: `${username || "User"} deleted a chat${evt?.title ? `: "${evt.title}"` : ""}`,
+      message: withIp(`${username || "User"} deleted a chat${evt?.title ? `: "${evt.title}"` : ""}`),
       accent: "#ef4444",
     };
   }
@@ -53,7 +57,7 @@ function getEventView(evt) {
     return {
       ...base,
       title: "User",
-      message: `User created: ${username || ""}`.trim(),
+      message: withIp(`User created: ${username || ""}`.trim()),
       accent: "#14b8a6",
     };
   }
@@ -61,7 +65,7 @@ function getEventView(evt) {
     return {
       ...base,
       title: "User",
-      message: `User updated: ${username || ""}`.trim(),
+      message: withIp(`User updated: ${username || ""}`.trim()),
       accent: "#f59e0b",
     };
   }
@@ -69,7 +73,7 @@ function getEventView(evt) {
     return {
       ...base,
       title: "User",
-      message: `User deleted: ${username || ""}`.trim(),
+      message: withIp(`User deleted: ${username || ""}`.trim()),
       accent: "#ef4444",
     };
   }
@@ -81,7 +85,7 @@ function getEventView(evt) {
     const action = String(evt?.action || 'updated');
     const actor = evt?.actorUsername ? String(evt.actorUsername) : 'System';
     const target = evt?.targetUsername ? String(evt.targetUsername) : '';
-    const msg = `${actor} ${action}${target ? `: ${target}` : ''}`;
+    const msg = withIp(`${actor} ${action}${target ? `: ${target}` : ''}`);
     return {
       ...base,
       title: 'Admin',
@@ -113,7 +117,7 @@ export default function AdminNotificationsPanel({ event, token }) {
 
     // On initial admin login the socket event can be missed; show the latest server-side event.
     const ctrl = new AbortController();
-    fetch('/api/admin/events?limit=50', {
+    fetch(`${API_BASE}/admin/events?limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
@@ -144,7 +148,7 @@ export default function AdminNotificationsPanel({ event, token }) {
     if (!token) return;
 
     const ctrl = new AbortController();
-    fetch("/api/admin/events?limit=200", {
+    fetch(`${API_BASE}/admin/events?limit=200`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })

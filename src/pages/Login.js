@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE } from '../lib/net';
 
 export default function Login({ onRegister }) {
   const { login } = useAuth();
@@ -12,11 +13,17 @@ export default function Login({ onRegister }) {
   }
 
   async function submit() {
+    const u = String(username || '').trim();
+    if (!u) {
+      alert('Username is required');
+      return;
+    }
+
     try {
-      const res = await fetch('/api/login', {
+      const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username: u })
       });
 
        if (!res.ok) {

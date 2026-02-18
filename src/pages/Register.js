@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE } from '../lib/net';
 
 export default function Register({ onRegistered, onCancel }) {
   const [email, setEmail] = useState('');
@@ -17,7 +18,7 @@ export default function Register({ onRegistered, onCancel }) {
     }
 
     try {
-      const res = await fetch('/api/register', {
+      const res = await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

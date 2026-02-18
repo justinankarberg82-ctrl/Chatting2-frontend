@@ -1,4 +1,4 @@
-import ReactMarkdown from "react-markdown";
+import MarkdownMessage from "./MarkdownMessage";
 
 export default function MessageList({ messages, isTyping, bottomRef }) {
   return (
@@ -39,11 +39,9 @@ export default function MessageList({ messages, isTyping, bottomRef }) {
                 marginRight: m.role === "user" ? 0 : "auto",
               }}
             >
-              <ReactMarkdown>
-                {m.content
-                  .replace(/^You:\s*/i, "")
-                  .replace(/^ChatGPT:\s*/i, "")}
-              </ReactMarkdown>
+              <MarkdownMessage>
+                {m.content.replace(/^You:\s*/i, "").replace(/^ChatGPT:\s*/i, "")}
+              </MarkdownMessage>
             </div>
           </div>
         ))}

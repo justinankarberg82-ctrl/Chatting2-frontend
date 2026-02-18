@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE } from './lib/net';
 
 export default function Chat() {
   const [messages, setMessages] = useState([]);
@@ -10,11 +11,11 @@ export default function Chat() {
     if (!input.trim()) return;
     setLoading(true);
 
-    const res = await fetch('/api/chat/stream', {
+    const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${localStorage.getItem('token')}`
+        Authorization: `Bearer ${sessionStorage.getItem('token') || localStorage.getItem('token')}`
       },
       body: JSON.stringify({ message: input, chatId })
     });

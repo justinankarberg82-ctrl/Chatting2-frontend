@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
+import { API_BASE, SOCKET_ORIGIN } from '../lib/net';
 
 const AuthContext = createContext();
 
@@ -18,6 +19,31 @@ export function AuthProvider({ children }) {
   });
   const socketRef = useRef(null);
   const [logoutSignal, setLogoutSignal] = useState(null);
+  const [caution, setCaution] = useState(null);
+
+  function clearSession() {
+    try {
+      sessionStorage.removeItem('token');
+      localStorage.removeItem('token');
+    } catch {
+      // ignore
+    }
+    setToken(null);
+    if (socketRef.current) {
+      try {
+        socketRef.current.disconnect();
+      } catch {
+        // ignore
+      }
+      socketRef.current = null;
+    }
+  }
+
+  function forceLogout(nextCaution) {
+    setCaution(nextCaution || { reason: 'logout', at: new Date().toISOString() });
+    setLogoutSignal(null);
+    clearSession();
+  }
 
   function decodeJwtPayload(t) {
     try {
@@ -45,23 +71,42 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    const socket = io(window.location.origin, { auth: { token } });
+    const socket = io(SOCKET_ORIGIN || undefined, { auth: { token } });
     socket.on('user:event', (evt) => {
-      if (evt?.type === 'FORCE_LOGOUT') {
-        setLogoutSignal({
-          reason: evt.reason || 'logout',
-          at: evt.at || new Date().toISOString(),
+      if (evt?.type !== 'FORCE_LOGOUT') return;
+
+      const reason = String(evt?.reason || 'logout');
+      const message =
+        reason === 'disabled'
+          ? 'Your account was disabled by an admin.'
+          : reason === 'deleted'
+            ? 'Your account was deleted by an admin.'
+            : 'Session ended.';
+
+      forceLogout({ reason, message, at: evt?.at || new Date().toISOString() });
+    });
+
+    // If server forcibly disconnects sockets (e.g., user disabled/deleted) but the logout event
+    // was missed, still end the session and show caution.
+    socket.on('disconnect', (reason) => {
+      const r = String(reason || '');
+      if (!token) return;
+      if (r === 'io server disconnect' || r === 'server namespace disconnect') {
+        forceLogout({
+          reason: 'session_ended',
+          message: 'Session ended.',
+          at: new Date().toISOString(),
         });
       }
     });
 
     socket.on('connect_error', (err) => {
       if (String(err?.message || '').toLowerCase().includes('unauthorized')) {
-        setLogoutSignal({ reason: 'server_restart', at: new Date().toISOString() });
-        // Clear local session; /api/logout may not accept expired tokens.
-        sessionStorage.removeItem('token');
-        localStorage.removeItem('token');
-        setToken(null);
+        forceLogout({
+          reason: 'server_restart',
+          message: 'Server restarted. Please open your URL again.',
+          at: new Date().toISOString(),
+        });
       }
     });
     socketRef.current = socket;
@@ -76,25 +121,46 @@ export function AuthProvider({ children }) {
     sessionStorage.setItem('token', token);
     localStorage.removeItem('token');
     setLogoutSignal(null);
+    setCaution(null);
     setToken(token);
   }
 
   function logout() {
     const t = token || sessionStorage.getItem('token') || localStorage.getItem('token');
     if (t) {
-      fetch('/api/logout', {
+      fetch(`${API_BASE}/logout`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${t}` }
       }).catch(() => {});
     }
     setLogoutSignal(null);
-    sessionStorage.removeItem('token');
-    localStorage.removeItem('token');
-    setToken(null);
+    setCaution(null);
+    clearSession();
+
+    // If the user is on a username URL (auto-login), go back to landing.
+    try {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.assign('/');
+      }
+    } catch {
+      // ignore
+    }
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, logoutSignal, setLogoutSignal }}>
+    <AuthContext.Provider
+      value={{
+        token,
+        user,
+        login,
+        logout,
+        forceLogout,
+        caution,
+        clearCaution: () => setCaution(null),
+        logoutSignal,
+        setLogoutSignal,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

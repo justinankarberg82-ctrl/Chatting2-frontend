@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { DayPicker } from "react-day-picker";
 import "react-day-picker/dist/style.css";
 import TimeUnitSegmented from "./TimeUnitSegmented";
+import { API_BASE } from "../lib/net";
 
 function toDateKey(d) {
   const yyyy = d.getFullYear();
@@ -38,6 +39,10 @@ function startOfYear(d) {
   n.setHours(0, 0, 0, 0);
   n.setMonth(0, 1);
   return n;
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
 }
 
 function formatRangeLabel(unit, anchorDate) {
@@ -93,7 +98,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const calendarRef = useRef(null);
   const calendarButtonRef = useRef(null);
-  const [calendarPos, setCalendarPos] = useState({ top: 0, right: 0 });
+  const [calendarPos, setCalendarPos] = useState({ top: 0, left: 0 });
 
   const [rows, setRows] = useState([]);
   const [prevRows, setPrevRows] = useState([]);
@@ -141,6 +146,21 @@ export default function TopUsersPanel({ token, refreshKey }) {
 
   useEffect(() => {
     if (!calendarOpen) return;
+
+    const clampToViewport = () => {
+      const pop = calendarRef.current;
+      if (!pop) return;
+      const r = pop.getBoundingClientRect();
+      const pad = 8;
+      setCalendarPos((prev) => {
+        const leftMax = Math.max(pad, window.innerWidth - r.width - pad);
+        const topMax = Math.max(pad, window.innerHeight - r.height - pad);
+        const nextLeft = Math.round(clamp(prev.left, pad, leftMax));
+        const nextTop = Math.round(clamp(prev.top, pad, topMax));
+        if (nextLeft === prev.left && nextTop === prev.top) return prev;
+        return { ...prev, left: nextLeft, top: nextTop };
+      });
+    };
     const onKeyDown = (e) => {
       if (e.key === "Escape") setCalendarOpen(false);
     };
@@ -154,9 +174,14 @@ export default function TopUsersPanel({ token, refreshKey }) {
 
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("resize", clampToViewport);
+    window.addEventListener("scroll", clampToViewport, true);
+    requestAnimationFrame(clampToViewport);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("resize", clampToViewport);
+      window.removeEventListener("scroll", clampToViewport, true);
     };
   }, [calendarOpen]);
 
@@ -172,7 +197,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
 
     setLoading(true);
     setError(null);
-    fetch(`/api/admin/top-users?${qs.toString()}`, {
+    fetch(`${API_BASE}/admin/top-users?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
@@ -212,7 +237,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
       limit: String(TOP_N),
     });
 
-    fetch(`/api/admin/top-users?${qs.toString()}`, {
+    fetch(`${API_BASE}/admin/top-users?${qs.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: ctrl.signal,
     })
@@ -346,19 +371,19 @@ export default function TopUsersPanel({ token, refreshKey }) {
           <button
             ref={calendarButtonRef}
             type="button"
-            onClick={() => {
-              const next = !calendarOpen;
-              if (next) {
-                const rect = calendarButtonRef.current?.getBoundingClientRect();
-                if (rect) {
-                  setCalendarPos({
-                    top: Math.round(rect.bottom + 8),
-                    right: Math.max(8, Math.round(window.innerWidth - rect.right)),
-                  });
+              onClick={() => {
+                const next = !calendarOpen;
+                if (next) {
+                  const rect = calendarButtonRef.current?.getBoundingClientRect();
+                  if (rect) {
+                    setCalendarPos({
+                      top: Math.round(rect.bottom + 8),
+                      left: Math.round(rect.left),
+                    });
+                  }
                 }
-              }
-              setCalendarOpen(next);
-            }}
+                setCalendarOpen(next);
+              }}
             aria-label="Open calendar"
             title="Pick period"
             style={{
@@ -570,7 +595,7 @@ export default function TopUsersPanel({ token, refreshKey }) {
             style={{
               position: "fixed",
               top: calendarPos.top,
-              right: calendarPos.right,
+              left: calendarPos.left,
               zIndex: 10000,
               background: "#ffffff",
               borderRadius: 14,
@@ -579,6 +604,8 @@ export default function TopUsersPanel({ token, refreshKey }) {
               padding: 10,
               fontSize: 12,
               fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif",
+              maxHeight: `calc(100vh - ${calendarPos.top}px - 12px)`,
+              overflow: "auto",
             }}
           >
             {unit === "year" ? (

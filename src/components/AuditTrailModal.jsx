@@ -27,6 +27,7 @@ function toExportLines(events) {
   return (events || []).map((e) => {
     const when = e?.createdAt ? new Date(e.createdAt).toLocaleString() : e?.at ? new Date(e.at).toLocaleString() : "";
     const type = String(e?.type || "");
+    const ip = e?.ip ? String(e.ip) : "";
     const msg = (() => {
       if (type === "LOGIN") return `Logged in${e?.username ? `: ${e.username}` : ""}`;
       if (type === "LOGOUT") return `Logged out${e?.username ? `: ${e.username}` : ""}`;
@@ -57,7 +58,7 @@ function toExportLines(events) {
       return type || "Event";
     })();
 
-    return `[${when}] ${msg}`;
+    return `[${when}] ${msg}${ip ? ` (ip: ${ip})` : ""}`;
   });
 }
 
@@ -91,6 +92,7 @@ function buildDetails(e) {
     const out = {};
     if (e?.userId) out.userId = e.userId;
     if (e?.username) out.username = e.username;
+    if (e?.ip) out.ip = e.ip;
     if (e?.chatId) out.chatId = e.chatId;
     if (typeof e?.tokensUsed === "number") out.tokensUsed = e.tokensUsed;
     if (typeof e?.tokensDelta === "number") out.tokensDelta = e.tokensDelta;
@@ -194,6 +196,7 @@ function getAuditChangeLines(e) {
 
 export default function AuditTrailModal({ open, onClose, title, subtitle, events, exportName = "audit" }) {
   const [visible, setVisible] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [sortDir, setSortDir] = useState("desc");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -250,6 +253,7 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
         e?.targetUsername,
         e?.action,
         e?.title,
+        e?.ip,
         v?.title,
         v?.message,
         d?.main,
@@ -288,33 +292,43 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
     if (remaining < 160) setPage((p) => p + 1);
   };
 
-  const onExport = async () => {
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setExportMenuOpen(false);
+    };
+    const onClick = (e) => {
+      // Close if click happened outside the menu.
+      if (!e.target?.closest?.("[data-export-menu='true']")) {
+        setExportMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onClick);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onClick);
+    };
+  }, [exportMenuOpen]);
+
+  const startExport = (fmt) => {
     const ts = new Date();
     const stamp = `${ts.getFullYear()}${String(ts.getMonth() + 1).padStart(2, "0")}${String(ts.getDate()).padStart(2, "0")}-${String(ts.getHours()).padStart(2, "0")}${String(ts.getMinutes()).padStart(2, "0")}${String(ts.getSeconds()).padStart(2, "0")}`;
 
-    const pickAndSave = async (content, suggestedName, mime) => {
-      if (window.showSaveFilePicker) {
-        try {
-          const handle = await window.showSaveFilePicker({
-            suggestedName,
-            types: [
-              {
-                description: mime === "application/json" ? "JSON" : "Text",
-                accept: { [mime]: [suggestedName.endsWith(".json") ? ".json" : ".txt"] },
-              },
-            ],
-          });
-          const writable = await handle.createWritable();
-          await writable.write(content);
-          await writable.close();
-          return;
-        } catch (err) {
-          // User cancelled the dialog.
-          if (err?.name === "AbortError") return;
-          throw err;
-        }
-      }
+    const format = String(fmt || "json").toLowerCase() === "txt" ? "txt" : "json";
+    const mime = format === "txt" ? "text/plain" : "application/json";
+    const suggestedName = `${exportName}-${stamp}.${format}`;
 
+    const getContent = () => {
+      if (format === "txt") {
+        const lines = toExportLines(normalized);
+        return lines.join("\n") + "\n";
+      }
+      return JSON.stringify(normalized, null, 2);
+    };
+
+    const saveWithDownload = () => {
+      const content = getContent();
       const blob = new Blob([content], { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -326,15 +340,45 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
       URL.revokeObjectURL(url);
     };
 
-    const choice = window.prompt("Export format: json or txt", "json");
-    const fmt = String(choice || "json").trim().toLowerCase();
+    // Close the menu immediately (doesn't affect user gesture).
+    setExportMenuOpen(false);
 
-    if (fmt === "txt") {
-      const lines = toExportLines(normalized);
-      await pickAndSave(lines.join("\n") + "\n", `${exportName}-${stamp}.txt`, "text/plain");
-    } else {
-      await pickAndSave(JSON.stringify(normalized, null, 2), `${exportName}-${stamp}.json`, "application/json");
+    // If File System Access API is available, call it directly from the click.
+    if (window.showSaveFilePicker) {
+      let pickerPromise;
+      try {
+        pickerPromise = window.showSaveFilePicker({
+          suggestedName,
+          types: [
+            {
+              description: format === "json" ? "JSON" : "Text",
+              accept: { [mime]: [format === "json" ? ".json" : ".txt"] },
+            },
+          ],
+        });
+      } catch {
+        saveWithDownload();
+        return;
+      }
+
+      pickerPromise
+        .then((handle) => handle.createWritable())
+        .then((writable) => writable.write(getContent()).then(() => writable.close()))
+        .catch((err) => {
+          // User cancelled the dialog.
+          if (err?.name === "AbortError") return;
+          // Common cases: missing user gesture / blocked picker.
+          if (err?.name === "SecurityError") {
+            saveWithDownload();
+            return;
+          }
+          // Fall back instead of breaking the UI.
+          saveWithDownload();
+        });
+      return;
     }
+
+    saveWithDownload();
   };
 
   if (!open) return null;
@@ -423,26 +467,81 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
           </div>
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              type="button"
-              onClick={onExport}
-              style={{
-                padding: "9px 12px",
-                borderRadius: 12,
-                border: "1px solid #e5e7eb",
-                background: "#ffffff",
-                fontSize: 12,
-                fontWeight: 500,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-              title="Export"
-            >
-              <DownloadIcon />
-              Export
-            </button>
+            <div style={{ position: "relative" }} data-export-menu="true">
+              <button
+                type="button"
+                onClick={() => setExportMenuOpen((v) => !v)}
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 12,
+                  border: "1px solid #e5e7eb",
+                  background: "#ffffff",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                title="Export"
+              >
+                <DownloadIcon />
+                Export
+              </button>
+
+              {exportMenuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    right: 0,
+                    width: 180,
+                    borderRadius: 14,
+                    border: "1px solid rgba(15, 23, 42, 0.10)",
+                    background: "rgba(255,255,255,0.96)",
+                    boxShadow: "0 18px 40px rgba(2, 6, 23, 0.18)",
+                    overflow: "hidden",
+                    zIndex: 999,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => startExport("json")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Export as JSON
+                  </button>
+                  <div style={{ height: 1, background: "rgba(15, 23, 42, 0.08)" }} />
+                  <button
+                    type="button"
+                    onClick={() => startExport("txt")}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "10px 12px",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#0f172a",
+                    }}
+                  >
+                    Export as TXT
+                  </button>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={onClose}
@@ -564,12 +663,13 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
            {items.length === 0 ? (
              <div style={{ padding: 14, fontSize: 13, color: "#6b7280" }}>No events.</div>
            ) : (
-             pagedItems.map((e) => {
-               const d = buildDetails(e);
-               const v = getCardView(e);
-               const isAudit = String(e?.type || "").toUpperCase() === "AUDIT";
-               const auditLines = isAudit ? getAuditChangeLines(e) : [];
-               return (
+              pagedItems.map((e) => {
+                const d = buildDetails(e);
+                const v = getCardView(e);
+                const isAudit = String(e?.type || "").toUpperCase() === "AUDIT";
+                const auditLines = isAudit ? getAuditChangeLines(e) : [];
+                const ip = e?.ip ? String(e.ip) : "";
+                return (
                 <div
                   key={e._key}
                   style={{
@@ -607,6 +707,30 @@ export default function AuditTrailModal({ open, onClose, title, subtitle, events
                       <div style={{ marginTop: 6, fontSize: 13, color: "#334155", lineHeight: 1.25 }}>
                         {v.message || d.main}
                       </div>
+
+                      {ip ? (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "6px 10px",
+                            borderRadius: 999,
+                            background: "#f1f5f9",
+                            border: "1px solid #e5e7eb",
+                            color: "#0f172a",
+                            fontSize: 12,
+                            fontWeight: 700,
+                            fontFamily:
+                              "ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace",
+                          }}
+                          title={ip}
+                        >
+                          IP
+                          <span style={{ opacity: 0.75 }}>{ip}</span>
+                        </div>
+                      ) : null}
 
                       {isAudit && auditLines.length > 0 ? (
                         <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>

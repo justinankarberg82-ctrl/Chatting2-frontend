@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import MarkdownMessage from "../components/MarkdownMessage";
 import Sidebar from "../components/Sidebar";
 import { useAuth } from "../context/AuthContext";
+import { API_BASE } from "../lib/net";
 
 export default function ChatPage() {
-  const { token, user, logout, logoutSignal, setLogoutSignal } = useAuth();
+  const { token, user, logout, logoutSignal, setLogoutSignal, forceLogout } = useAuth();
   const CHAT_COLUMN_WIDTH = 768;
   const SIDEBAR_WIDTH = 260;
   const [emptyStage, setEmptyStage] = useState("shown"); // shown | leaving | hidden
@@ -28,7 +29,7 @@ export default function ChatPage() {
   const [logoutAnimating, setLogoutAnimating] = useState(false);
 
   const authHeader = useMemo(
-    () => ({ Authorization: `Bearer ${token || localStorage.getItem("token")}` }),
+    () => ({ Authorization: `Bearer ${token || sessionStorage.getItem("token") || localStorage.getItem("token")}` }),
     [token],
   );
 
@@ -52,20 +53,69 @@ export default function ChatPage() {
     };
   }, []);
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
+  const pinnedRef = useRef(true);
+  const scrollRafRef = useRef(null);
+  const lastScrollAtRef = useRef(0);
+
+  const prefersReducedMotion = useMemo(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return !!window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  const updatePinned = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nextPinned = remaining <= 120;
+
+    // If the user scrolls away from bottom while we're streaming, stop any queued auto-scroll.
+    if (!nextPinned && scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+
+    pinnedRef.current = nextPinned;
+  };
+
+  const scrollToBottom = (behavior) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion ? "auto" : behavior || "smooth" });
+  };
+
+  const scheduleScrollToBottom = (behavior) => {
+    if (!pinnedRef.current) return;
+
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+      // Throttle: streaming updates can be very frequent.
+      if (now - lastScrollAtRef.current < 80) {
+        scheduleScrollToBottom(behavior);
+        return;
+      }
+      lastScrollAtRef.current = now;
+      scrollToBottom(behavior);
+    });
+  };
 
   useEffect(() => {
-    fetch("/api/chats", { headers: authHeader })
+    fetch(`${API_BASE}/chats`, { headers: authHeader })
       .then(async (res) => {
-        if (res.status === 401 || res.status === 403) throw new Error('unauthorized');
+        if (res.status === 401 || res.status === 403) {
+          const msg = res.status === 403 ? 'Account disabled. Contact the admin.' : 'Session expired.';
+          forceLogout?.({ reason: 'unauthorized', message: msg, at: new Date().toISOString() });
+          throw new Error('unauthorized');
+        }
         return res.json();
       })
       .then(setChats)
       .catch(() => {
-        // token invalid/disabled
-        setLogoutAnimating(true);
-        setTimeout(() => logout(), 250);
+        // handled by forceLogout
       });
-  }, [authHeader, logout]);
+  }, [authHeader, logout, forceLogout]);
 
   useEffect(() => {
     if (!logoutSignal || logoutAnimating) return;
@@ -79,13 +129,18 @@ export default function ChatPage() {
   }, [logoutSignal, logoutAnimating, logout, setLogoutSignal]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    scheduleScrollToBottom("smooth");
   }, [messages, isTyping]);
 
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    // Initialize pinned state once the scroll container exists.
+    requestAnimationFrame(() => updatePinned());
   }, []);
 
   useEffect(() => {
@@ -125,10 +180,11 @@ export default function ChatPage() {
   }
 
   async function loadChat(id) {
+    pinnedRef.current = true;
     setActiveChatId(id);
     setChatId(id);
 
-    const res = await fetch(`/api/chat/${id}`, {
+    const res = await fetch(`${API_BASE}/chat/${id}`, {
       headers: authHeader,
     });
     if (res.status === 401 || res.status === 403) {
@@ -192,7 +248,48 @@ export default function ChatPage() {
     setMessages(adapted);
   }
 
+  async function setActiveVersion(messageId, versionIndex) {
+    if (!chatId) return;
+    if (!messageId) return;
+
+    const nextVersion = Number(versionIndex) + 1;
+    if (!Number.isFinite(nextVersion) || nextVersion < 1) return;
+
+    try {
+      const res = await fetch(`${API_BASE}/chat/${chatId}/message/${messageId}/active-version`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeader,
+        },
+        body: JSON.stringify({ version: nextVersion }),
+      });
+      if (!res.ok) return;
+
+      // Keep the edited message in view; don't force-pin to bottom.
+      pinnedRef.current = false;
+      await loadChat(chatId);
+    } catch {
+      // ignore
+    }
+  }
+
+  function handlePrevVersion(messageId) {
+    const m = (messages || []).find((x) => x?.role === "user" && x?.messageId === messageId);
+    if (!m || !m.totalVersions || m.totalVersions <= 1) return;
+    const nextIdx = Math.max(0, Number(m.versionIndex || 0) - 1);
+    setActiveVersion(messageId, nextIdx);
+  }
+
+  function handleNextVersion(messageId) {
+    const m = (messages || []).find((x) => x?.role === "user" && x?.messageId === messageId);
+    if (!m || !m.totalVersions || m.totalVersions <= 1) return;
+    const nextIdx = Math.min(Number(m.totalVersions) - 1, Number(m.versionIndex || 0) + 1);
+    setActiveVersion(messageId, nextIdx);
+  }
+
   function newChat() {
+    pinnedRef.current = true;
     setMessages([]);
     setChatId(null);
     setActiveChatId(null);
@@ -200,7 +297,7 @@ export default function ChatPage() {
     setStartAnim(false);
     // scroll to top like ChatGPT new chat
     requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "auto" });
+      scrollToBottom("auto");
     });
   }
 
@@ -208,6 +305,9 @@ export default function ChatPage() {
     const text = String(input || "").trim();
     if (!text) return;
     if (isTyping) return;
+
+    // If the user is scrolled up, sending should jump them back to the latest message.
+    pinnedRef.current = true;
 
     const tempId = createTempId();
     setInput("");
@@ -219,9 +319,12 @@ export default function ChatPage() {
       { role: "assistant", content: "", tempId, loading: true },
     ]);
 
+    // Let React paint the new message, then scroll smoothly.
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom("smooth")));
+
     let res;
     try {
-      res = await fetch("/api/chat/stream", {
+      res = await fetch(`${API_BASE}/chat/stream`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -304,7 +407,7 @@ export default function ChatPage() {
               return updated;
             });
             // refresh chat list so new chat appears in history
-            fetch("/api/chats", {
+            fetch(`${API_BASE}/chats`, {
               headers: authHeader,
             })
               .then((res) => res.json())
@@ -341,7 +444,7 @@ export default function ChatPage() {
   }
 
   async function deleteChat(id) {
-    await fetch(`/api/chat/${id}`, {
+    await fetch(`${API_BASE}/chat/${id}`, {
       method: "DELETE",
       headers: authHeader,
     });
@@ -367,7 +470,7 @@ export default function ChatPage() {
     const title = prompt("New title", chat.title);
     if (!title) return;
 
-    await fetch(`/api/chat/${chat._id}/title`, {
+    await fetch(`${API_BASE}/chat/${chat._id}/title`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
@@ -619,6 +722,10 @@ export default function ChatPage() {
             fontSize: 17,
             lineHeight: 1.75,
           }}
+          ref={scrollRef}
+          onScroll={() => updatePinned()}
+          onWheel={() => updatePinned()}
+          onTouchMove={() => updatePinned()}
         >
           <div
             style={{
@@ -730,6 +837,9 @@ export default function ChatPage() {
                             setEditValue("");
                             setIsTyping(true);
 
+                            pinnedRef.current = true;
+                            requestAnimationFrame(() => requestAnimationFrame(() => scrollToBottom("smooth")));
+
                             // Optimistically update the edited message and clear its assistant reply.
                             setMessages((prev) => {
                               const updated = [...(prev || [])];
@@ -778,7 +888,7 @@ export default function ChatPage() {
                             });
 
                             const res = await fetch(
-                              "/api/chat/stream",
+                              `${API_BASE}/chat/stream`,
                               {
                                 method: "POST",
                                 headers: {
@@ -935,7 +1045,7 @@ export default function ChatPage() {
                             if (idToLoad) loadChat(idToLoad);
 
                             // Refresh chat list so title/order update after edit.
-                            fetch("/api/chats", { headers: authHeader })
+                            fetch(`${API_BASE}/chats`, { headers: authHeader })
                               .then((r) => (r.ok ? r.json() : []))
                               .then(setChats)
                               .catch(() => {});
@@ -957,7 +1067,7 @@ export default function ChatPage() {
                       </div>
                     </div>
                       ) : (
-                        <ReactMarkdown>{m.content}</ReactMarkdown>
+                        <MarkdownMessage>{m.content}</MarkdownMessage>
                       )}
                     </div>
 
@@ -1127,7 +1237,7 @@ export default function ChatPage() {
                     {m.loading && !String(m.content || "").trim() ? (
                       <TypingDots />
                     ) : (
-                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                      <MarkdownMessage>{m.content}</MarkdownMessage>
                     )}
                   </div>
                 )}
