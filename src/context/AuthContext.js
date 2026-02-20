@@ -1,5 +1,4 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { io } from 'socket.io-client';
 import { API_BASE, SOCKET_ORIGIN } from '../lib/net';
 
 const AuthContext = createContext();
@@ -63,58 +62,82 @@ export function AuthProvider({ children }) {
   }, [token]);
 
   useEffect(() => {
-    if (!token) {
+    const role = String(user?.role || '').toLowerCase();
+    const enableSocket = !!token && role === 'admin';
+
+    if (!enableSocket) {
       if (socketRef.current) {
-        socketRef.current.disconnect();
+        try {
+          socketRef.current.disconnect();
+        } catch {
+          // ignore
+        }
         socketRef.current = null;
       }
       return;
     }
 
-    const socket = io(SOCKET_ORIGIN || undefined, { auth: { token } });
-    socket.on('user:event', (evt) => {
-      if (evt?.type !== 'FORCE_LOGOUT') return;
+    let disposed = false;
+    let socket = null;
 
-      const reason = String(evt?.reason || 'logout');
-      const message =
-        reason === 'disabled'
-          ? 'Your account was disabled by an admin.'
-          : reason === 'deleted'
-            ? 'Your account was deleted by an admin.'
-            : 'Session ended.';
+    (async () => {
+      const mod = await import('socket.io-client');
+      if (disposed) return;
 
-      forceLogout({ reason, message, at: evt?.at || new Date().toISOString() });
-    });
+      socket = mod.io(SOCKET_ORIGIN || undefined, { auth: { token } });
+      socket.on('user:event', (evt) => {
+        if (evt?.type !== 'FORCE_LOGOUT') return;
 
-    // If server forcibly disconnects sockets (e.g., user disabled/deleted) but the logout event
-    // was missed, still end the session and show caution.
-    socket.on('disconnect', (reason) => {
-      const r = String(reason || '');
-      if (!token) return;
-      if (r === 'io server disconnect' || r === 'server namespace disconnect') {
-        forceLogout({
-          reason: 'session_ended',
-          message: 'Session ended.',
-          at: new Date().toISOString(),
-        });
-      }
-    });
+        const reason = String(evt?.reason || 'logout');
+        const message =
+          reason === 'disabled'
+            ? 'Your account was disabled by an admin.'
+            : reason === 'deleted'
+              ? 'Your account was deleted by an admin.'
+              : 'Session ended.';
 
-    socket.on('connect_error', (err) => {
-      if (String(err?.message || '').toLowerCase().includes('unauthorized')) {
-        forceLogout({
-          reason: 'server_restart',
-          message: 'Server restarted. Please open your URL again.',
-          at: new Date().toISOString(),
-        });
-      }
-    });
-    socketRef.current = socket;
+        forceLogout({ reason, message, at: evt?.at || new Date().toISOString() });
+      });
+
+      // If server forcibly disconnects sockets (e.g., user disabled/deleted) but the logout event
+      // was missed, still end the session and show caution.
+      socket.on('disconnect', (reason) => {
+        const r = String(reason || '');
+        if (!token) return;
+        if (r === 'io server disconnect' || r === 'server namespace disconnect') {
+          forceLogout({
+            reason: 'session_ended',
+            message: 'Session ended.',
+            at: new Date().toISOString(),
+          });
+        }
+      });
+
+      socket.on('connect_error', (err) => {
+        if (String(err?.message || '').toLowerCase().includes('unauthorized')) {
+          forceLogout({
+            reason: 'server_restart',
+            message: 'Server restarted. Please open your URL again.',
+            at: new Date().toISOString(),
+          });
+        }
+      });
+
+      socketRef.current = socket;
+    })();
+
     return () => {
-      socket.disconnect();
+      disposed = true;
+      if (socket) {
+        try {
+          socket.disconnect();
+        } catch {
+          // ignore
+        }
+      }
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [token]);
+  }, [token, user?.role]);
 
   function login(token) {
     // Session-only token: closing the browser logs the user out.

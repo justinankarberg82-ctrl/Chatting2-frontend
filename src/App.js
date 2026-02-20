@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
-import ChatPage from './pages/ChatPage';
-import AdminDashboard from './pages/AdminDashboard';
 import Landing from './pages/Landing';
 import { API_BASE } from './lib/net';
+
+const ChatPage = lazy(() => import('./pages/ChatPage'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 
 function parseRoute(pathname, search) {
   const rawPath = String(pathname || '').replace(/\/+$/g, '');
@@ -144,8 +145,21 @@ function Router() {
     };
   }, [token, route, login, caution]);
 
-  if (token && user?.role === 'admin') return <AdminDashboard />;
-  if (token) return <ChatPage />;
+  if (token && user?.role === 'admin') {
+    return (
+      <Suspense fallback={<div style={{ padding: 18, fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>Loading…</div>}>
+        <AdminDashboard />
+      </Suspense>
+    );
+  }
+
+  if (token) {
+    return (
+      <Suspense fallback={<div style={{ padding: 18, fontFamily: "'Segoe UI', 'Helvetica Neue', Arial, sans-serif" }}>Loading…</div>}>
+        <ChatPage />
+      </Suspense>
+    );
+  }
 
   // Global caution (forced logout, server restart, disabled/deleted)
   if (caution) {

@@ -1,5 +1,4 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useEffect, useMemo, useState } from "react";
 
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
@@ -8,9 +7,40 @@ function clamp(v, min, max) {
 export default function MarkdownMessage({ children }) {
   const content = typeof children === "string" ? children : String(children || "");
 
+  const needsMarkdown = useMemo(() => {
+    // Keep this intentionally fuzzy: we only want to avoid loading markdown libs
+    // for simple one-line messages.
+    return /[`*_#[\]\n>|-]/.test(content);
+  }, [content]);
+
+  const [md, setMd] = useState(null);
+
+  useEffect(() => {
+    if (!needsMarkdown) return;
+
+    let cancelled = false;
+    import("react-markdown")
+      .then((rm) => {
+        if (cancelled) return;
+        setMd({
+          ReactMarkdown: rm.default || rm,
+        });
+      })
+      .catch(() => {
+        // If markdown deps fail to load, fall back to plain text rendering.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [needsMarkdown]);
+
+  if (!needsMarkdown || !md?.ReactMarkdown) {
+    return <span style={{ whiteSpace: "pre-wrap" }}>{content}</span>;
+  }
+
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+    <md.ReactMarkdown
       components={{
         p: ({ children }) => (
           <p style={{ margin: "10px 0", lineHeight: 1.65 }}>{children}</p>
@@ -177,6 +207,6 @@ export default function MarkdownMessage({ children }) {
       }}
     >
       {content}
-    </ReactMarkdown>
+    </md.ReactMarkdown>
   );
 }
